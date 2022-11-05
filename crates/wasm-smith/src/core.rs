@@ -120,6 +120,12 @@ pub struct Module {
     /// The predicted size of the effective type of this module, based on this
     /// module's size of the types of imports/exports.
     type_size: u32,
+
+    // For the FVM
+    /// The FVM invoke type
+    invoke_type: Option<Type>,
+    /// The index of the invoke function to export
+    invoke_index: Option<u32>,
 }
 
 impl<'a> Arbitrary<'a> for Module {
@@ -197,6 +203,8 @@ impl Module {
             code: Vec::new(),
             data: Vec::new(),
             type_size: 0,
+            invoke_type: None,
+            invoke_index: None,
         }
     }
 }
@@ -379,9 +387,25 @@ impl Module {
         // NB: It isn't guaranteed that `self.types.is_empty()` because when
         // available imports are configured, we may add eagerly specigfic types
         // for the available imports before generating arbitrary types here.
+
+        // For the fvm
+        // First add the invoke type
+        // (param i32) (result i32)
+        let ty = Type::Func(Rc::new(FuncType {
+            params: vec![ValType::I32],
+            results: vec![ValType::I32],
+        }));
+        self.record_type(&ty);
+        self.types.push(ty.clone());
+        self.invoke_type = Some(ty);
+
         let min = self.config.min_types().saturating_sub(self.types.len());
         let max = self.config.max_types().saturating_sub(self.types.len());
-        arbitrary_loop(u, min, max, |u| {
+
+        if min + 1 >= max {
+            return Ok(());
+        }
+        arbitrary_loop(u, min, max /* shift the max by one */, |u| {
             let ty = self.arbitrary_type(u)?;
             self.record_type(&ty);
             self.types.push(ty);
@@ -810,6 +834,24 @@ impl Module {
             return Ok(());
         }
 
+        // Add the invoke function by default, the others will help us
+        let mut shift = 0;
+        if let Some(ty) = &self.invoke_type {
+            match ty {
+                Type::Func(ty) => {
+                    self.funcs.push((0, ty.clone()));
+                    self.num_defined_funcs += 1;
+                    self.invoke_index = Some(self.num_defined_funcs as u32 - 1);
+                    shift += 1;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if self.config.min_funcs() + shift >= self.config.max_funcs() {
+            return Ok(());
+        }
+
         arbitrary_loop(u, self.config.min_funcs(), self.config.max_funcs(), |u| {
             if !self.can_add_local_or_import_func() {
                 return Ok(false);
@@ -911,6 +953,18 @@ impl Module {
     }
 
     fn arbitrary_exports(&mut self, u: &mut Unstructured) -> Result<()> {
+        // Export the invoke function
+        let mut shift = 0;
+        if let Some(invokei) = self.invoke_index {
+            self.exports
+                .push(("invoke".to_string(), ExportKind::Func, invokei));
+            shift += 1
+        }
+
+        self.exports
+            .push(("memory".to_string(), ExportKind::Memory, 0));
+        shift += 1;
+
         if self.config.max_type_size() < self.type_size && !self.config.export_everything() {
             return Ok(());
         }
@@ -940,7 +994,7 @@ impl Module {
 
         let mut export_names = HashSet::new();
 
-        // If the configuration demands exporting everything, we do so here and
+        // If the configuration demands exporting everything, we do so herearbi and
         // early-return.
         if self.config.export_everything() {
             for choices_by_kind in choices {
@@ -949,6 +1003,10 @@ impl Module {
                     self.add_arbitrary_export(name, kind, idx)?;
                 }
             }
+            return Ok(());
+        }
+
+        if self.config.min_exports() + shift >= self.config.max_exports() {
             return Ok(());
         }
 
@@ -986,6 +1044,16 @@ impl Module {
         let ty = self.type_of(kind, idx);
         self.type_size += 1 + ty.size();
         if self.type_size <= self.config.max_type_size() {
+            if let Some(invokei) = self.invoke_index {
+                if idx == invokei && kind == ExportKind::Func {
+                    // Just ignore since invoke is always added
+                    return Ok(());
+                }
+            }
+            // Avoid exporting the same thing twice
+            if idx == 0 && kind == ExportKind::Memory {
+                return Ok(());
+            }
             self.exports.push((name, kind, idx));
             Ok(())
         } else {
