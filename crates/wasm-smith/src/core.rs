@@ -124,6 +124,8 @@ pub struct Module {
     // For the FVM
     /// The FVM invoke type
     invoke_type: Option<Type>,
+    // Index of the invoke type
+    invoke_type_index: Option<u32>,
     /// The index of the invoke function to export
     invoke_index: Option<u32>,
 }
@@ -205,6 +207,7 @@ impl Module {
             type_size: 0,
             invoke_type: None,
             invoke_index: None,
+            invoke_type_index: None
         }
     }
 }
@@ -391,13 +394,31 @@ impl Module {
         // For the fvm
         // First add the invoke type
         // (param i32) (result i32)
-        let ty = Type::Func(Rc::new(FuncType {
+        let functype = FuncType {
             params: vec![ValType::I32],
             results: vec![ValType::I32],
-        }));
-        self.record_type(&ty);
-        self.types.push(ty.clone());
-        self.invoke_type = Some(ty);
+        };
+        let functypeparams = functype.params.clone();
+        let functyperesults = functype.results.clone();
+
+        let ty = Type::Func(Rc::new(functype));
+        // Just add it if it doesn't exist
+        for (i, t) in self.types.iter().enumerate() {
+            match t {
+                Type::Func(f) => {
+                    if f.params == functypeparams && f.results == functyperesults {
+                        self.invoke_type = Some(ty.clone());
+                        self.invoke_type_index = Some(i as u32);
+                        break;
+                    }
+                }
+            }
+        }
+        if let None = self.invoke_type {
+            self.record_type(&ty);
+            self.types.push(ty.clone());
+            self.invoke_type_index = Some(self.types.len() as u32 - 1);
+        }
 
         let min = self.config.min_types().saturating_sub(self.types.len());
         let max = self.config.max_types().saturating_sub(self.types.len());
@@ -836,12 +857,14 @@ impl Module {
 
         // Add the invoke function by default, the others will help us
         let mut shift = 0;
-        if let Some(ty) = &self.invoke_type {
+        if let (Some(ty), Some(tpeidx)) = (&self.invoke_type, self.invoke_type_index) {
+            // Check the index of the invoke function by counting the imported ones
+            let imported = self.imports.iter().filter(|&i| if let EntityType::Func(_, _) = i.entity_type {true} else {false}).count();
             match ty {
                 Type::Func(ty) => {
-                    self.funcs.push((0, ty.clone()));
+                    self.funcs.push((tpeidx as u32, ty.clone()));
                     self.num_defined_funcs += 1;
-                    self.invoke_index = Some(self.num_defined_funcs as u32 - 1);
+                    self.invoke_index = Some(imported as u32 + self.num_defined_funcs as u32 - 1);
                     shift += 1;
                 }
                 _ => unreachable!(),
