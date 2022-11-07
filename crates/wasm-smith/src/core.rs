@@ -418,6 +418,7 @@ impl Module {
             self.record_type(&ty);
             self.types.push(ty.clone());
             self.invoke_type_index = Some(self.types.len() as u32 - 1);
+            self.invoke_type = Some(ty.clone());
         }
 
         let min = self.config.min_types().saturating_sub(self.types.len());
