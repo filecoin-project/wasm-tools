@@ -1732,6 +1732,7 @@ flags! {
     #[cfg_attr(feature = "_internal_cli", derive(serde::Deserialize))]
     pub enum InstructionKind: u16 {
         Numeric,
+        TruncSat,
         Vector,
         Reference,
         Parametric,
@@ -1754,6 +1755,7 @@ impl FromStr for InstructionKind {
             "table" => Ok(InstructionKind::Table),
             "memory" => Ok(InstructionKind::Memory),
             "control" => Ok(InstructionKind::Control),
+            "truncsat" => Ok(InstructionKind::TruncSat),
             _ => Err(format!("unknown instruction kind: {}", s)),
         }
     }
