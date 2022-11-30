@@ -33,3 +33,4 @@ wat = { path = "../wat" }
 
 [features]
 _internal_cli = ["serde", "flagset/serde"]
+force-use-imports = [ ]

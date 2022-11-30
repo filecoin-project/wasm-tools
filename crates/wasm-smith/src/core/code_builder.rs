@@ -1,3 +1,5 @@
+use crate::core::EntityType;
+
 use super::{
     Elements, FuncType, GlobalInitExpr, Instruction, InstructionKind::*, InstructionKinds, Module,
     ValType,
@@ -1433,6 +1435,27 @@ fn call(u: &mut Unstructured, module: &Module, builder: &mut CodeBuilder) -> Res
         .filter(|(k, _)| builder.types_on_stack(k))
         .flat_map(|(_, v)| v.iter().copied())
         .collect::<Vec<_>>();
+
+    #[cfg(feature = "force-use-imports")] 
+    let candidates = {
+        // Only if compiled with this option
+        // The calls always to external imported functions
+        let mut imported_functions = vec![];
+        let mut idx = 0;
+        for import in &module.imports {
+            if let EntityType::Func(_, _ ) = import.entity_type {
+                if candidates.contains(&idx) {
+                    imported_functions.push(idx);
+                }
+                idx += 1;
+            }
+        }
+
+        if !imported_functions.is_empty() {
+            imported_functions
+        } else { candidates }
+    };
+
     assert!(candidates.len() > 0);
     let i = u.int_in_range(0..=candidates.len() - 1)?;
     let (func_idx, ty) = module.funcs().nth(candidates[i] as usize).unwrap();
