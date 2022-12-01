@@ -609,7 +609,17 @@ impl Module {
                         let im = import_reader.read().expect("could not read import");
                         // We can immediately filter whether this is an import we want to
                         // use.
-                        let use_import = u.arbitrary().unwrap_or(false);
+                        let mut use_import = u.arbitrary().unwrap_or(false);
+
+                        // Stress syscalls
+                        #[cfg(feature = "force-use-imports")]
+                        {
+                            use wasmparser::TypeRef;
+                            if let TypeRef::Func(_) = im.ty {
+                                use_import = true;
+                            }
+                        }
+
                         if !use_import {
                             continue;
                         }
@@ -852,6 +862,8 @@ impl Module {
     }
 
     fn arbitrary_funcs(&mut self, u: &mut Unstructured) -> Result<()> {
+
+        #[cfg(not(feature = "force-use-imports"))]
         if self.func_types.is_empty() {
             return Ok(());
         }
@@ -870,6 +882,10 @@ impl Module {
                 }
                 _ => unreachable!(),
             }
+        }
+        #[cfg(feature = "force-use-imports")]
+        if self.func_types.is_empty() {
+            return Ok(());
         }
 
         if self.config.min_funcs() + shift >= self.config.max_funcs() {
