@@ -1440,6 +1440,7 @@ fn call(u: &mut Unstructured, module: &Module, builder: &mut CodeBuilder) -> Res
     let candidates = {
         // Only if compiled with this option
         // The calls always to external imported functions
+        println!("Using imported");
         let mut imported_functions = vec![];
         let mut idx = 0;
         for import in &module.imports {
