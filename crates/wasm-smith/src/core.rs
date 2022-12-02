@@ -769,7 +769,7 @@ impl Module {
         // Finally, add the entities we just generated.
         self.types.extend(new_types);
         self.imports.extend(new_imports);
-
+        
         Ok(true)
     }
 

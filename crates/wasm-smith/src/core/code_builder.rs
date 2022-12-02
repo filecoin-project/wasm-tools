@@ -89,6 +89,7 @@ macro_rules! instructions {
 //    less than 1000.
 instructions! {
     // Control instructions.
+    (Some(call_valid), call, Control),
     (None, unreachable, Control, 990),
     (None, nop, Control, 800),
     (None, block, Control),
@@ -104,7 +105,6 @@ instructions! {
     (Some(br_if_valid), br_if, Control),
     (Some(br_table_valid), br_table, Control),
     (Some(return_valid), r#return, Control, 900),
-    (Some(call_valid), call, Control),
     (Some(call_indirect_valid), call_indirect, Control),
     (Some(throw_valid), throw, Control, 850),
     (Some(rethrow_valid), rethrow, Control),
@@ -840,10 +840,17 @@ impl CodeBuilder<'_> {
         let max_instructions = module.config.max_instructions();
         let allowed_instructions = module.config.allowed_instructions();
         let mut instructions = vec![];
-
         while !self.allocs.controls.is_empty() {
+            #[cfg(not(feature = "force-use-imports"))]
             let keep_going = instructions.len() < max_instructions
                 && u.arbitrary().map_or(false, |b: u8| b != 0);
+
+            // The syscall stress needs more instructions to build a successfull function call
+            // Therefore, we need to set a minimum number of instructions
+            #[cfg(feature = "force-use-imports")]
+            let keep_going = (instructions.len() < max_instructions
+                && u.arbitrary().map_or(false, |b: u8| b != 0)) || instructions.len() < 20;
+                
             if !keep_going {
                 self.end_active_control_frames(u, &mut instructions);
                 break;
@@ -1428,6 +1435,7 @@ fn call_valid(_: &Module, builder: &mut CodeBuilder) -> bool {
 }
 
 fn call(u: &mut Unstructured, module: &Module, builder: &mut CodeBuilder) -> Result<Instruction> {
+    
     let candidates = builder
         .allocs
         .functions
@@ -1440,7 +1448,6 @@ fn call(u: &mut Unstructured, module: &Module, builder: &mut CodeBuilder) -> Res
     let candidates = {
         // Only if compiled with this option
         // The calls always to external imported functions
-        println!("Using imported");
         let mut imported_functions = vec![];
         let mut idx = 0;
         for import in &module.imports {
