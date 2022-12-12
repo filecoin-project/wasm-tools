@@ -409,6 +409,8 @@ impl Module {
                     if f.params == functypeparams && f.results == functyperesults {
                         self.invoke_type = Some(ty.clone());
                         self.invoke_type_index = Some(i as u32);
+                        self.record_type(&ty);
+                        self.types.push(ty.clone());
                         break;
                     }
                 }
